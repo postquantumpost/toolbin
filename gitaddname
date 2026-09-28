@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -x
+git config --global user.name "John P Harvey"
+git config --global user.email "postquantumpost@pm.me"
