@@ -1,0 +1,12 @@
+# file sourced from ~/.bashrc.jph
+#
+#if [ -f ~/.bashrc.jph ]; then
+#    . ~/.bashrc.jph
+#fi
+
+export PATH=$PATH:/usr/local/go/bin
+export PATH="$PATH:$(go env GOPATH)/bin"
+
+export PATH=$PATH:~/work/toolbin
+
+alias lt='ls -ltr'

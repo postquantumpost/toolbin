@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+# git config --global -l
+# git config --global alias.l1 'log --stat -1'
+
+set -x
+git status

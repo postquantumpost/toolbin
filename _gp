@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+set -x
+git remote -v
+git push origin HEAD
