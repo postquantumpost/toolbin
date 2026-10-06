@@ -2,8 +2,7 @@
 applyTo: "**"
 ---
 
-Announce that this file (specify the full path name) was loaded when it
-is loaded.
+At the start of each new conversation, before answering the user, send a visible message: "Loaded /home/jph/work/videye/AGENTS.md".
 
 When using temporary files and directory in an application, have the application
 create a temporary directory. Then put the working temporary files and
