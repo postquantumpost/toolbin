@@ -9,4 +9,6 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 
 export PATH=$PATH:~/work/toolbin
 
+export PATH=$PATH:~/.cargo/bin/
+
 alias lt='ls -ltr'
