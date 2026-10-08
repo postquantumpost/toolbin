@@ -12,3 +12,4 @@ export PATH=$PATH:~/work/toolbin
 export PATH=$PATH:~/.cargo/bin/
 
 alias lt='ls -ltr'
+alias h='history 10'
