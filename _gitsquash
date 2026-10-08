@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -x
+#git fetch
+git merge-base --is-ancestor '@{upstream}' HEAD &&
+git reset --soft '@{upstream}' &&
+git commit -m "checkpoint"

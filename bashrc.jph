@@ -11,5 +11,7 @@ export PATH=$PATH:~/work/toolbin
 
 export PATH=$PATH:~/.cargo/bin/
 
+export EDITOR=vi
+
 alias lt='ls -ltr'
 alias h='history 10'
