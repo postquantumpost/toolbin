@@ -14,4 +14,8 @@ When working with vscode use a tmp directory at the open directory location. For
 the open folder/directory is ~/work/thumbnail/ use ~/work/thumbnail/tmp/ as the temporary directory.
 Create it if needed.
 
+Before consulting external reference implementations such as FFmpeg, check the applicable standards
+and design documents in `docs/` first. Treat those local documents as the primary source and use
+reference code only to cross-check details that remain unclear.
+
 When working with git do not stage or commit soft links unless they are requested by name.
