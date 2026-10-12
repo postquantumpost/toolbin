@@ -19,3 +19,17 @@ and design documents in `docs/` first. Treat those local documents as the primar
 reference code only to cross-check details that remain unclear.
 
 When working with git do not stage or commit soft links unless they are requested by name.
+
+Making progress with difficult tasks.
+When it is requested to implement an item, but the item is too complex, break the item
+into several smaller tasks. Don't have one of the tasks, the last one for example, be
+a "and everything else" task. The smaller tasks should each be achievable. Do not
+stop once the smaller tasks are determined.  Once the
+smaller task list is created, implement the first of the smaller tasks.  If that item
+is too complex to implement, recurse this rule.
+When an item can not be implemented, adding a test for that item that shows that it is
+unimplemented does not count as progress. Adding a test is ok, but it is required to
+implement the dependent item that was causing it to report that it was unimplemented.
+If that dependent item is too complex, resurse this rule.
+
+There is a python venv in ~/work/.venv for use by all projects below ~/work directory.
