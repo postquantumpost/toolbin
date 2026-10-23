@@ -33,3 +33,15 @@ implement the dependent item that was causing it to report that it was unimpleme
 If that dependent item is too complex, resurse this rule.
 
 There is a python venv in ~/work/.venv for use by all projects below ~/work directory.
+
+When working in work/pygorvid, make code changes and bug fixes in all three languages
+rust, go, and python, but don't run any python tests unless it can be guaranteed they
+will run in less than 60 seconds. The python tests will be run
+offline later.
+
+Don't make up new work while waiting for a test to run. Just wait until the test completes. Don't poll for process completion or any other action that
+uses tokens. Don't do anything that would not have been done if the
+test ran faster to completion.
+
+Run all tests with time limits using a tool like timeout. Use a default time
+limit of 60 seconds.  If a longer time is required, confirm with the user.
