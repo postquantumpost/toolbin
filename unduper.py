@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Find and optionally remove duplicate files in a directory.
+"""Convert WebP files and find and optionally remove duplicates in a directory.
 
-Pass one handles Windows style copies named "name (n).suffix" (B) by
-comparing them with the original "name.suffix" (A). Pass two compares the
-cryptographic sums of all files in the directory.
+The first pass converts ".webp" files to ".png" using ffmpeg. Pass two handles
+Windows style copies named "name (n).suffix" (B) by comparing them with the
+original "name.suffix" (A). Pass three compares the cryptographic sums of all
+files in the directory.
 
 Without --modify only messages are printed; with --modify the described
 renames and removals are performed.
@@ -13,6 +14,7 @@ import argparse
 import hashlib
 import os
 import re
+import subprocess
 import sys
 
 # Matches "name (n).suffix" and "name (n)" (no suffix).
@@ -68,8 +70,34 @@ class Unduper:
             os.remove(path)
 
     def process_dir(self, dirpath='.'):
+        self.pass_webp(dirpath)
         self.pass_one(dirpath)
         self.pass_two(dirpath)
+
+    def pass_webp(self, dirpath):
+        """Convert WebP files to PNG before comparing duplicates."""
+        for name in self.list_files(dirpath):
+            if not name.endswith('.webp'):
+                continue
+            source = os.path.join(dirpath, name)
+            target = os.path.splitext(source)[0] + '.png'
+            if os.path.lexists(target):
+                self.message(f'"{source}" cannot be converted because "{target}" already exists')
+                continue
+            if not self.modify:
+                self.message(f'"{source}" will be converted to "{target}"')
+                continue
+
+            result = subprocess.run(
+                ['ffmpeg', '-nostdin', '-n', '-v', 'error', '-i', source,
+                 '-frames:v', '1', target],
+                capture_output=True, text=True)
+            if result.returncode:
+                error = result.stderr.strip()
+                raise RuntimeError(
+                    f'failed to convert "{source}" to "{target}": {error}')
+            os.remove(source)
+            self.message(f'"{source}" was converted to "{target}"')
 
     def pass_one(self, dirpath):
         """Handle "name (n).suffix" copies; restarts after each rename."""
