@@ -77,7 +77,7 @@ class Unduper:
     def pass_webp(self, dirpath):
         """Convert WebP files to PNG before comparing duplicates."""
         for name in self.list_files(dirpath):
-            if not name.endswith('.webp'):
+            if not name.lower().endswith('.webp'):
                 continue
             source = os.path.join(dirpath, name)
             target = os.path.splitext(source)[0] + '.png'
