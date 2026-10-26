@@ -82,7 +82,11 @@ class Unduper:
             source = os.path.join(dirpath, name)
             target = os.path.splitext(source)[0] + '.png'
             if os.path.lexists(target):
-                self.message(f'"{source}" cannot be converted because "{target}" already exists')
+                if self.modify:
+                    os.remove(source)
+                    self.message(f'"{source}" was removed because "{target}" already exists')
+                else:
+                    self.message(f'"{source}" and "{target}" both exist')
                 continue
             if not self.modify:
                 self.message(f'"{source}" will be converted to "{target}"')
