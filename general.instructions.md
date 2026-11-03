@@ -49,3 +49,5 @@ limit of 60 seconds.  If a longer time is required, confirm with the user.
 When possible, use Haiku error messages as long as they don't interfere with
 giving clear error information. Otherwise use a regular error message.
 
+Do not produce code with memory leaks.
+
