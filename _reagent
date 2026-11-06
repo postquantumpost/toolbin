@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#set -x
+src=general.instructions.md
+dst=AGENTS.md
+dsrc=toolbin
+here=$(pwd)
+myd=${here##*/}
+echo myd is "$myd"
+if [ "$myd" != "$dsrc" ]; then
+  echo "This script must be run from the $dsrc directory"
+  exit 1
+fi
+
+do_linkmode() {
+  echo "Link mode"
+}
+
+do_copymode() {
+  for d in ../*/; do
+    dslashless=${d%/}
+    dshort=${dslashless##*/}
+    #echo dshort is "$dshort"
+    if [ "$dshort" = "$dsrc" ]; then
+      continue
+    fi
+    cp -v "$src" "${d}/${dst}"
+  done
+}
+echo OSTYPE is "$OSTYPE"
+case "$OSTYPE" in
+  linux*)   do_linkmode ;;
+  darwin*)  do_linkmode ;;
+  cygwin)   do_copymode ;;
+  msys*)    do_copymode ;;
+  *)        echo "Unknown OS" ;;
+esac
