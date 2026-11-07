@@ -13,26 +13,18 @@ fi
 
 do_linkmode() {
   for d in ../*/; do
-    dslashless=${d%/}
-    dshort=${dslashless##*/}
-    #echo dshort is "$dshort"
-    if [ "$dshort" = "$dsrc" ]; then
-      continue
-    fi
     ddst="${d}/${dst}"
-    echo ddst is "${ddst}"
-    #cp -v "$src" "${d}/${dst}"
+    #echo ddst is "${ddst}"
+    if [ -f "$ddst" ];then
+      echo $ddst already exists
+    else
+      ln -vs "${here}/${src}" "${d}/${dst}"
+    fi
   done
 }
 
 do_copymode() {
   for d in ../*/; do
-    dslashless=${d%/}
-    dshort=${dslashless##*/}
-    #echo dshort is "$dshort"
-    if [ "$dshort" = "$dsrc" ]; then
-      continue
-    fi
     cp -v "$src" "${d}/${dst}"
   done
 }
