@@ -51,3 +51,6 @@ giving clear error information. Otherwise use a regular error message.
 
 Do not produce code with memory leaks.
 
+Do not stage or check files larger than 1 MiB into git without confirmation. Do not
+use the production git repository for tests.  If a repository is needed for tests,
+create a new temporary repository after confirmation.
