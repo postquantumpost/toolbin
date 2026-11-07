@@ -12,7 +12,17 @@ if [ "$myd" != "$dsrc" ]; then
 fi
 
 do_linkmode() {
-  echo "Link mode"
+  for d in ../*/; do
+    dslashless=${d%/}
+    dshort=${dslashless##*/}
+    #echo dshort is "$dshort"
+    if [ "$dshort" = "$dsrc" ]; then
+      continue
+    fi
+    ddst="${d}/${dst}"
+    echo ddst is "${ddst}"
+    #cp -v "$src" "${d}/${dst}"
+  done
 }
 
 do_copymode() {
@@ -26,6 +36,7 @@ do_copymode() {
     cp -v "$src" "${d}/${dst}"
   done
 }
+
 echo OSTYPE is "$OSTYPE"
 case "$OSTYPE" in
   linux*)   do_linkmode ;;
