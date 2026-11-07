@@ -2,4 +2,5 @@
 
 set -x
 git remote -v
+git pull
 git push origin HEAD
