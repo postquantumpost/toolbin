@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# git push origin main --force
+
 set -x
 git remote -v
 git pull
