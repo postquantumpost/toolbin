@@ -10,6 +10,8 @@ import sys
 import os
 import json
 import subprocess
+import tempfile
+import uuid
 from pathlib import Path
 
 os.environ["PYTHON_COLORS"] = "0"
@@ -56,6 +58,37 @@ def relaunch_under_pythonw():
 
 
 # --- Network Helper Functions ---
+def get_interface_index(interface):
+    """Resolve both socket interface names and Windows friendly adapter names."""
+    try:
+        return socket.if_nametoindex(interface)
+    except OSError:
+        if os.name != "nt":
+            raise
+
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("iphlpapi")
+    api.ConvertInterfaceAliasToLuid.argtypes = [
+        wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_uint64)
+    ]
+    api.ConvertInterfaceAliasToLuid.restype = wintypes.ULONG
+    api.ConvertInterfaceLuidToIndex.argtypes = [
+        ctypes.POINTER(ctypes.c_uint64), ctypes.POINTER(wintypes.ULONG)
+    ]
+    api.ConvertInterfaceLuidToIndex.restype = wintypes.ULONG
+    luid = ctypes.c_uint64()
+    index = wintypes.ULONG()
+    status = api.ConvertInterfaceAliasToLuid(interface, ctypes.byref(luid))
+    if status:
+        raise ctypes.WinError(status)
+    status = api.ConvertInterfaceLuidToIndex(ctypes.byref(luid), ctypes.byref(index))
+    if status:
+        raise ctypes.WinError(status)
+    return index.value
+
+
 def get_network_info():
     """Dynamically finds active interface, MAC, IPv4, and IPv6 addresses."""
     import psutil
@@ -65,22 +98,29 @@ def get_network_info():
     ipv6_addr = "::1"
     if_index = 0
 
+    stats = psutil.net_if_stats()
+    lookup_errors = []
     for interface, addrs in psutil.net_if_addrs().items():
         # Skip loopback interfaces unless nothing else is available
         if 'loopback' in interface.lower() or 'lo' == interface.lower():
             continue
+        if interface not in stats or not stats[interface].isup:
+            continue
 
         has_v4 = any(a.family == socket.AF_INET for a in addrs)
-        if not has_v4:
+        has_v6 = any(a.family == socket.AF_INET6 for a in addrs)
+        if not has_v4 or not has_v6:
             continue  # Look for an active interface with an IPv4/IPv6 footprint
 
         # Get interface index for IPv6 multicast scoping
-        print(f"{interface=}")
         try:
-            if_index = socket.if_nametoindex(interface)
-        except Exception as e:
-            print(f"Exception: {e}")
-            if_index=0
+            if_index = get_interface_index(interface)
+        except OSError as error:
+            lookup_errors.append(f"{interface}: {error}")
+            continue
+        if if_index == 0:
+            lookup_errors.append(f"{interface}: interface index is zero")
+            continue
 
         for addr in addrs:
             if addr.family == psutil.AF_LINK:
@@ -91,7 +131,12 @@ def get_network_info():
                 # Avoid link-local scoped addresses for simplicity if global exists
                 ipv6_addr = addr.address.split('%')[0]
         break
-
+    else:
+        details = "; ".join(lookup_errors)
+        raise OSError(
+            "No active IPv4/IPv6 multicast interface could be resolved"
+            + (f": {details}" if details else ".")
+        )
 
     return mac_addr, ipv6_addr, ipv4_addr, if_index
 
@@ -137,7 +182,6 @@ class MulticastApp:
         self.received_packets = {}  # key: sender signature, value: (timestamp, data_list)
         self.history_file = Path.home() / "pi_multicast_history.json"
         self.history_lock = threading.Lock()
-        self.history = self.load_history()
         self.history_error = None
         self.history_error_reported = False
         self.last_sent_packet = "None yet"
@@ -145,44 +189,65 @@ class MulticastApp:
         self.root = None
         self.sent_label = None
         self.tree = None
+        self.history = self.load_history()
 
     def load_history(self):
         """Load the most recent packet records from the user's history file."""
         try:
             with self.history_file.open("r", encoding="utf-8") as file:
                 history = json.load(file)
+
+            if not isinstance(history, list):
+                raise ValueError("History file must contain a JSON list")
+
+            for record in history:
+                if (
+                    not isinstance(record, dict)
+                    or not isinstance(record.get("timestamp"), (int, float))
+                    or not isinstance(record.get("data"), list)
+                    or len(record["data"]) != 4
+                    or not all(isinstance(value, str) for value in record["data"])
+                ):
+                    raise ValueError("Invalid packet record in history file")
         except FileNotFoundError:
             return []
-
-        if not isinstance(history, list):
-            raise ValueError(f"History file must contain a JSON list: {self.history_file}")
-
-        for record in history:
-            if (
-                not isinstance(record, dict)
-                or not isinstance(record.get("timestamp"), (int, float))
-                or not isinstance(record.get("data"), list)
-                or len(record["data"]) != 4
-                or not all(isinstance(value, str) for value in record["data"])
-            ):
-                raise ValueError(f"Invalid packet record in history file: {self.history_file}")
+        except ValueError as error:
+            backup = self.history_file.with_name(
+                f"{self.history_file.stem}.corrupt-{uuid.uuid4().hex}.json"
+            )
+            # Do not continue with empty history unless the original is preserved.
+            self.history_file.replace(backup)
+            message = (
+                f"Could not load packet history: {error}\n"
+                f"Original preserved at {backup}. Starting with empty history."
+            )
+            self.report_history_error(message)
+            return []
 
         return deduplicate_history(history)
 
     def save_history(self):
         """Persist the bounded packet history."""
         try:
-            with self.history_file.open("w", encoding="utf-8") as file:
-                json.dump(self.history, file, ensure_ascii=False, indent=2)
+            with tempfile.TemporaryDirectory(
+                prefix=".pi_multicast-", dir=self.history_file.parent
+            ) as directory:
+                pending = Path(directory) / self.history_file.name
+                with pending.open("w", encoding="utf-8") as file:
+                    json.dump(self.history, file, ensure_ascii=False, indent=2)
+                pending.replace(self.history_file)
         except OSError as error:
             message = f"Could not save packet history to {self.history_file}:\n{error}"
-            if self.gui_mode:
-                self.history_error = message
-                if self.root and not self.history_error_reported:
-                    self.history_error_reported = True
-                    self.root.after(0, self.show_history_error, message)
-            else:
-                print(f"[ERROR HISTORY] {message}", file=sys.stderr)
+            self.report_history_error(message)
+
+    def report_history_error(self, message):
+        if self.gui_mode:
+            self.history_error = message
+            if self.root and not self.history_error_reported:
+                self.history_error_reported = True
+                self.root.after(0, self.show_history_error, message)
+        else:
+            print(f"[ERROR HISTORY] {message}", file=sys.stderr)
 
     def show_history_error(self, message):
         from tkinter import messagebox

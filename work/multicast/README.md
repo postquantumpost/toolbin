@@ -63,6 +63,17 @@ same machine name, MAC, IPv6, and IPv4 values are deduplicated, retaining only
 the most recent arrival. The GUI displays historical arrivals with `H`
 prefixed to their age.
 
+History saves atomically replace the previous file so interrupted or concurrent
+writes cannot leave a partially written JSON document. If history contains
+invalid JSON or malformed records, the program preserves the original beside
+it as `pi_multicast_history.corrupt-<unique-id>.json`, warns on standard error
+(or in a GUI dialog), and starts with empty history. If the backup cannot be
+created, startup fails rather than risking loss of the original.
+
+Interface selection skips disconnected adapters and requires both IPv4 and
+IPv6 addresses. On Windows, friendly adapter names (such as `Ethernet 3`) are
+resolved using the native Windows interface API when socket name lookup fails.
+
 Examples:
 
 ```shell
@@ -75,3 +86,9 @@ The program sends to IPv6 multicast address `ff05:3141:5926:5358:9793:2384:6264:
 on UDP port `5005`, using a hop limit of 15. Broadcasts are sent at random
 intervals of 60 to 300 seconds. Network and firewall configuration must allow
 IPv6 multicast traffic on the participating interface.
+
+## Tests
+
+From this directory, run `python -m unittest -v test_pi_multicast`. The tests
+use temporary history files, never the user's saved history. On Windows,
+they also check friendly adapter names against the native interface API.
