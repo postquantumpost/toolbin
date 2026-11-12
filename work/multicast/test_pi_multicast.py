@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import runpy
 import socket
 import tempfile
 from types import SimpleNamespace
@@ -157,6 +158,64 @@ class HistoryTests(unittest.TestCase):
 
 
 class InterfaceTests(unittest.TestCase):
+    def test_report_lists_all_interfaces_and_addresses(self):
+        import psutil
+
+        ipv4 = SimpleNamespace(family=socket.AF_INET, address="192.0.2.1")
+        ipv4_second = SimpleNamespace(family=socket.AF_INET, address="192.0.2.2")
+        ipv6 = SimpleNamespace(family=socket.AF_INET6, address="fe80::1%7")
+        link = SimpleNamespace(family=psutil.AF_LINK, address="00:11:22:33:44:55")
+        with (
+            patch.object(psutil, "net_if_addrs", return_value={
+                "v4-only": [link, ipv4, ipv4_second],
+                "v6-only": [ipv6],
+                "both": [ipv4, ipv6],
+                "no-ip": [link],
+            }),
+            patch.object(psutil, "net_if_stats", return_value={
+                "v4-only": SimpleNamespace(isup=True),
+                "v6-only": SimpleNamespace(isup=False),
+                "both": SimpleNamespace(isup=True),
+            }),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            multicast.report_network_interfaces()
+        self.assertEqual(
+            output.getvalue(),
+            "v4-only (up)\n  IPv4: 192.0.2.1, 192.0.2.2\n  IPv6: none\n"
+            "v6-only (down)\n  IPv4: none\n  IPv6: fe80::1%7\n"
+            "both (up)\n  IPv4: 192.0.2.1\n  IPv6: fe80::1%7\n"
+            "no-ip (unknown)\n  IPv4: none\n  IPv6: none\n",
+        )
+
+    def test_report_when_no_interfaces_found(self):
+        import psutil
+
+        with (
+            patch.object(psutil, "net_if_addrs", return_value={}),
+            patch.object(psutil, "net_if_stats", return_value={}),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            multicast.report_network_interfaces()
+        self.assertEqual(output.getvalue(), "No network interfaces found.\n")
+
+    def test_report_option_exits_before_starting_application(self):
+        import psutil
+
+        with (
+            patch.object(psutil, "net_if_addrs", return_value={}),
+            patch.object(psutil, "net_if_stats", return_value={}),
+            patch.object(multicast.sys, "argv", ["pi_multicast.py", "--report", "-g"]),
+            patch.object(multicast.threading, "Thread") as thread,
+            patch.object(Path, "home", side_effect=AssertionError("app must not start")),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            with self.assertRaises(SystemExit) as result:
+                runpy.run_path(multicast.__file__, run_name="__main__")
+        self.assertEqual(result.exception.code, 0)
+        self.assertEqual(output.getvalue(), "No network interfaces found.\n")
+        thread.assert_not_called()
+
     def test_socket_interface_name(self):
         with patch.object(multicast.socket, "if_nametoindex", return_value=7):
             self.assertEqual(multicast.get_interface_index("eth0"), 7)

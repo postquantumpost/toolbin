@@ -38,6 +38,7 @@ Run these commands from this directory:
 
 ```shell
 python pi_multicast.py --help
+python pi_multicast.py --report
 python pi_multicast.py [MACHINE_NAME] [-l] [-g]
 ```
 
@@ -50,6 +51,10 @@ name `unset`.
 Options:
 
 - `-h`, `--help`: Show the command-line help and exit.
+- `--report`: List all discovered interfaces, their up/down status, and their
+  IPv4 and IPv6 addresses, then exit without starting multicast or the GUI.
+  Interfaces with only one IP version, no IP addresses, or unknown status are
+  included. The report takes precedence over `-g` and `-l`.
 - `-l`: Print sent and received packet details to standard output when the GUI
   is disabled. Without logging or the GUI, the program runs quietly.
 - `-g`: Launch the dashboard showing the last sent packet and discovered

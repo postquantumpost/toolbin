@@ -142,6 +142,28 @@ def get_network_info():
 
     return mac_addr, ipv6_addr, ipv4_addr, if_index
 
+
+def report_network_interfaces():
+    """Print all discovered interfaces and their IP addresses."""
+    import psutil
+
+    interfaces = psutil.net_if_addrs()
+    stats = psutil.net_if_stats()
+    if not interfaces:
+        print("No network interfaces found.")
+        return
+
+    for interface, addrs in interfaces.items():
+        interface_stats = stats.get(interface)
+        status = "unknown" if interface_stats is None else (
+            "up" if interface_stats.isup else "down"
+        )
+        print(f"{interface} ({status})")
+        for label, family in (("IPv4", socket.AF_INET), ("IPv6", socket.AF_INET6)):
+            addresses = [addr.address for addr in addrs if addr.family == family]
+            print(f"  {label}: {', '.join(addresses) if addresses else 'none'}")
+
+
 def encode_string(s):
     """Encodes a string as 1 byte of length followed by UTF-8 content."""
     encoded = s.encode('utf-8')
@@ -477,8 +499,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("-l", action="store_true", help="Log output packets directly to standard out")
     parser.add_argument("-g", action="store_true", help="Launch Graphical User Interface dashboard tracking network age")
+    parser.add_argument("--report", action="store_true",
+                        help="List network interfaces and IP addresses, then exit")
 
     args = parser.parse_args()
+
+    if args.report:
+        report_network_interfaces()
+        raise SystemExit(0)
 
     if args.g and relaunch_under_pythonw():
         raise SystemExit(0)
