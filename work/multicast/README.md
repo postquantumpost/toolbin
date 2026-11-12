@@ -2,8 +2,8 @@
 
 `pi_multicast.py` periodically broadcasts this machine's name and network
 addresses over IPv6 multicast, and listens for broadcasts from other machines.
-Use the optional GUI to view discovered devices and the age of their latest
-packets.
+Use the optional GUI to view discovered devices, the arrival time of their
+latest packets, their age, and a persisted history of recent arrivals.
 
 ## Requirements
 
@@ -53,7 +53,15 @@ Options:
 - `-l`: Print sent and received packet details to standard output when the GUI
   is disabled. Without logging or the GUI, the program runs quietly.
 - `-g`: Launch the dashboard showing the last sent packet and discovered
-  devices. The GUI is optional; the program sends and listens in both modes.
+  devices, including each latest packet's arrival time and age. On Windows,
+  the GUI relaunches under `pythonw.exe` when needed to hide the console. The
+  GUI is optional; the program sends and listens in both modes.
+
+The program keeps up to 16 distinct received packet records in
+`pi_multicast_history.json` in the user's home directory. Records with the
+same machine name, MAC, IPv6, and IPv4 values are deduplicated, retaining only
+the most recent arrival. The GUI displays historical arrivals with `H`
+prefixed to their age.
 
 Examples:
 
