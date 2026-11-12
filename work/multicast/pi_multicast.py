@@ -439,7 +439,7 @@ def get_default_machine_name():
     if machine_name:
         return machine_name
 
-    if os.name == "nt":
+    if sys.platform == "linux" or os.name == "nt":
         try:
             return socket.gethostname() or "unset"
         except OSError:

@@ -173,5 +173,23 @@ class InterfaceTests(unittest.TestCase):
                 multicast.get_network_info()
 
 
+class MachineNameTests(unittest.TestCase):
+    def test_linux_hostname_is_used_when_environment_name_is_unset(self):
+        with (
+            patch.object(multicast.os, "getenv", return_value=None),
+            patch.object(multicast.sys, "platform", "linux"),
+            patch.object(multicast.socket, "gethostname", return_value="linux-host"),
+        ):
+            self.assertEqual(multicast.get_default_machine_name(), "linux-host")
+
+    def test_linux_hostname_failure_falls_back_to_unset(self):
+        with (
+            patch.object(multicast.os, "getenv", return_value=None),
+            patch.object(multicast.sys, "platform", "linux"),
+            patch.object(multicast.socket, "gethostname", side_effect=OSError),
+        ):
+            self.assertEqual(multicast.get_default_machine_name(), "unset")
+
+
 if __name__ == "__main__":
     unittest.main()
