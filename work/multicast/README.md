@@ -28,9 +28,11 @@ python pi_multicast.py --help
 python pi_multicast.py [MACHINE_NAME] [-l] [-g]
 ```
 
-`MACHINE_NAME` is an optional positional argument. If omitted, the program uses
-the `MACHINE_NAME` environment variable; if that is also unset, it broadcasts
-the name `unset`.
+`MACHINE_NAME` is an optional positional argument and overrides the default.
+If omitted, the program uses the `MACHINE_NAME` environment variable. If that
+is unset, Windows runs use the Windows machine name; if that cannot be
+retrieved (or the program is running on another platform), it broadcasts the
+name `unset`.
 
 Options:
 

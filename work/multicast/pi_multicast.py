@@ -247,10 +247,22 @@ class MulticastApp:
         self.root.after(1000, self.update_gui_loop)
 
 
-if __name__ == "__main__":
-    # Environment variable check or CLI fallback
-    env_name = os.getenv("MACHINE_NAME")
+def get_default_machine_name():
+    """Resolve the default broadcast name from configuration or the host."""
+    machine_name = os.getenv("MACHINE_NAME")
+    if machine_name:
+        return machine_name
 
+    if os.name == "nt":
+        try:
+            return socket.gethostname() or "unset"
+        except OSError:
+            pass
+
+    return "unset"
+
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Pi-Local IPv6 Multicast Broadcaster & Receiver",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -264,8 +276,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "name",
         nargs="?",
-        default=env_name or "unset",
-        help="Machine name to broadcast (overrides the MACHINE_NAME environment variable)",
+        default=get_default_machine_name(),
+        help="Machine name to broadcast (overrides the default from the environment or host)",
     )
     parser.add_argument("-l", action="store_true", help="Log output packets directly to standard out")
     parser.add_argument("-g", action="store_true", help="Launch Graphical User Interface dashboard tracking network age")
