@@ -33,8 +33,6 @@ unimplemented does not count as progress. Adding a test is ok, but it is require
 implement the dependent item that was causing it to report that it was unimplemented.
 If that dependent item is too complex, resurse this rule.
 
-There is a python venv in ~/work/.venv for use by all projects below ~/work directory.
-
 Don't make up new work while waiting for a test to run. Just wait until the test completes. Don't poll for process completion or any other action that
 uses tokens. Don't do anything that would not have been done if the
 test ran faster to completion.
@@ -52,3 +50,8 @@ When working with git do not stage or commit soft links unless they are requeste
 Do not stage or check files larger than 1 MiB into git without confirmation. Do not
 use the production git repository for tests.  If a repository is needed for tests,
 create a new temporary repository after confirmation.
+
+Have variable names indicate units when possible. For example if a value contains
+seconds, have the name indicate seconds. If it is milliseconds, have it indicate that.
+Don't just indicate it as a time span. The same for other units like length: meters, feet,
+inches, etc.
