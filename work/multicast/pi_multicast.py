@@ -29,6 +29,8 @@ import argparse
 MCAST_IPV6 = "ff05:3141:5926:5358:9793:2384:6264:3383"
 PORT = 5005
 history_length = 16
+HISTORY_SAVE_ATTEMPTS = 5
+HISTORY_SAVE_RETRY_DELAY_SECONDS = 0.1
 
 
 def relaunch_under_pythonw():
@@ -228,17 +230,25 @@ class MulticastApp:
 
     def save_history(self):
         """Persist the bounded packet history."""
-        try:
-            with tempfile.TemporaryDirectory(
-                prefix=".pi_multicast-", dir=self.history_file.parent
-            ) as directory:
-                pending = Path(directory) / self.history_file.name
-                with pending.open("w", encoding="utf-8") as file:
-                    json.dump(self.history, file, ensure_ascii=False, indent=2)
-                pending.replace(self.history_file)
-        except OSError as error:
-            message = f"Could not save packet history to {self.history_file}:\n{error}"
-            self.report_history_error(message)
+        for attempt in range(HISTORY_SAVE_ATTEMPTS):
+            try:
+                with tempfile.TemporaryDirectory(
+                    prefix=".pi_multicast-", dir=self.history_file.parent
+                ) as directory:
+                    pending = Path(directory) / self.history_file.name
+                    with pending.open("w", encoding="utf-8") as file:
+                        json.dump(self.history, file, ensure_ascii=False, indent=2)
+                    pending.replace(self.history_file)
+                return
+            except OSError as error:
+                if attempt == HISTORY_SAVE_ATTEMPTS - 1:
+                    message = (
+                        f"Could not save packet history to {self.history_file} "
+                        f"after {HISTORY_SAVE_ATTEMPTS} attempts:\n{error}"
+                    )
+                    self.report_history_error(message)
+                else:
+                    time.sleep(HISTORY_SAVE_RETRY_DELAY_SECONDS)
 
     def report_history_error(self, message):
         if self.gui_mode:

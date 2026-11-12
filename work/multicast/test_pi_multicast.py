@@ -102,10 +102,12 @@ class HistoryTests(unittest.TestCase):
             raise OSError("disk full")
 
         with (
-            patch.object(multicast.json, "dump", side_effect=partial_write),
+            patch.object(multicast.json, "dump", side_effect=partial_write) as dump,
+            patch.object(multicast.time, "sleep"),
             contextlib.redirect_stderr(io.StringIO()) as errors,
         ):
             app.save_history()
+        self.assertEqual(dump.call_count, 5)
         self.assertEqual(self.history_file.read_text(), "[]")
         self.assertIn("disk full", errors.getvalue())
         self.assertEqual(list(self.home.iterdir()), [self.history_file])
@@ -114,12 +116,43 @@ class HistoryTests(unittest.TestCase):
         self.history_file.write_text("[]", encoding="utf-8")
         app = self.make_app()
         with (
-            patch.object(Path, "replace", side_effect=PermissionError("replace denied")),
+            patch.object(Path, "replace", side_effect=PermissionError("replace denied")) as replace,
+            patch.object(multicast.time, "sleep") as sleep,
             contextlib.redirect_stderr(io.StringIO()) as errors,
         ):
             app.save_history()
+        self.assertEqual(replace.call_count, 5)
+        self.assertEqual(sleep.call_count, 4)
         self.assertEqual(self.history_file.read_text(), "[]")
         self.assertIn("replace denied", errors.getvalue())
+        self.assertIn("after 5 attempts", errors.getvalue())
+        self.assertEqual(errors.getvalue().count("[ERROR HISTORY]"), 1)
+        self.assertEqual(list(self.home.iterdir()), [self.history_file])
+
+    def test_save_succeeds_on_fifth_attempt(self):
+        self.history_file.write_text("[]", encoding="utf-8")
+        app = self.make_app()
+        app.history = [self.record]
+        original_replace = Path.replace
+        attempts = 0
+
+        def replace_after_failures(path, target):
+            nonlocal attempts
+            attempts += 1
+            if attempts < 5:
+                raise PermissionError("temporarily denied")
+            return original_replace(path, target)
+
+        with (
+            patch.object(Path, "replace", replace_after_failures),
+            patch.object(multicast.time, "sleep") as sleep,
+            contextlib.redirect_stderr(io.StringIO()) as errors,
+        ):
+            app.save_history()
+        self.assertEqual(attempts, 5)
+        self.assertEqual(sleep.call_count, 4)
+        self.assertEqual(errors.getvalue(), "")
+        self.assertEqual(json.loads(self.history_file.read_text()), [self.record])
         self.assertEqual(list(self.home.iterdir()), [self.history_file])
 
 

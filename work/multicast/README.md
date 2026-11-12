@@ -64,7 +64,9 @@ the most recent arrival. The GUI displays historical arrivals with `H`
 prefixed to their age.
 
 History saves atomically replace the previous file so interrupted or concurrent
-writes cannot leave a partially written JSON document. If history contains
+writes cannot leave a partially written JSON document. If a save fails, the
+program tries up to five times, with a short delay between attempts, and reports
+the final error if all attempts fail. If history contains
 invalid JSON or malformed records, the program preserves the original beside
 it as `pi_multicast_history.corrupt-<unique-id>.json`, warns on standard error
 (or in a GUI dialog), and starts with empty history. If the backup cannot be
