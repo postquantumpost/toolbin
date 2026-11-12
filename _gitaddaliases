@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -x
-git config --global alias.l="log --stat"
-git config --global alias.l1="log --stat -1"
-git config --global alias.l2="log --stat -2"
-git config --global alias.l3="log --stat -3"
-git config --global alias.l1p="log --stat -p -1"
-git config --global alias.l2p="log --stat -p -2"
-git config --global alias.l3p="log --stat -p -3"
+git config set --global alias.l "log --stat"
+git config set --global alias.l1 "log --stat -1"
+git config set --global alias.l2 "log --stat -2"
+git config set --global alias.l3 "log --stat -3"
+git config set --global alias.l1p "log --stat -p -1"
+git config set --global alias.l2p "log --stat -p -2"
+git config set --global alias.l3p "log --stat -p -3"
