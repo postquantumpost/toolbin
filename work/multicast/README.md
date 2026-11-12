@@ -19,6 +19,19 @@ Install the Python dependency:
 python -m pip install psutil
 ```
 
+## Windows installation
+
+Run `Install.ps1` from PowerShell to create `C:\runhere\` if needed and copy
+`pi_multicast.py` there:
+
+```powershell
+.\Install.ps1
+```
+
+If PowerShell reports an access-denied error, run PowerShell with permission to
+write to `C:\`. The installer copies only the program; install `psutil` for the
+Python interpreter that will run it.
+
 ## Usage
 
 Run these commands from this directory:
