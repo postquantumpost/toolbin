@@ -8,9 +8,10 @@ from pathlib import Path
 import runpy
 import socket
 import tempfile
+import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pi_multicast as multicast
 
@@ -23,8 +24,10 @@ class HistoryTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.home = Path(directory.name)
         self.history_file = self.home / "pi_multicast_history.json"
+        self.lock_file = self.home / "pi_multicast_history.json.lock"
+        self.now = multicast.time.time()
         self.record = {
-            "timestamp": 123.0,
+            "timestamp": self.now,
             "data": ["test", "00:11:22:33:44:55", "::1", "127.0.0.1"],
         }
 
@@ -32,8 +35,7 @@ class HistoryTests(unittest.TestCase):
         with (
             patch.object(multicast.Path, "home", return_value=self.home),
             patch.object(
-                multicast, "get_network_info",
-                return_value=("00:11:22:33:44:55", "::1", "127.0.0.1", 1),
+                multicast, "get_network_interfaces", return_value=[],
             ),
         ):
             return multicast.MulticastApp("test", False, gui)
@@ -44,15 +46,18 @@ class HistoryTests(unittest.TestCase):
 
     def test_valid_history_is_deduplicated_and_bounded(self):
         records = [
-            {"timestamp": index, "data": [str(index), "mac", "::1", "127.0.0.1"]}
+            {
+                "timestamp": self.now - 20 + index,
+                "data": [str(index), "mac", "::1", "127.0.0.1"],
+            }
             for index in range(20)
         ]
-        records.append(dict(records[-1], timestamp=100))
+        records.append(dict(records[-1], timestamp=self.now))
         self.history_file.write_text(json.dumps(records), encoding="utf-8")
         history = self.make_app().history
         self.assertEqual(len(history), multicast.history_length)
-        self.assertEqual(history[0]["timestamp"], 4)
-        self.assertEqual(history[-1]["timestamp"], 100)
+        self.assertEqual(history[0]["timestamp"], self.now - 16)
+        self.assertEqual(history[-1]["timestamp"], self.now)
 
     def test_corrupt_history_is_preserved_and_reported(self):
         valid = json.dumps([self.record]).encode("utf-8")
@@ -70,7 +75,7 @@ class HistoryTests(unittest.TestCase):
                 self.assertIn(str(backup), errors.getvalue())
                 self.assertIn("Starting with empty history", errors.getvalue())
                 self.assertFalse(self.history_file.exists())
-                app.record_packet(123.0, self.record["data"])
+                app.record_packet(self.now, self.record["data"])
                 self.assertEqual(json.loads(self.history_file.read_text()), [self.record])
                 self.assertEqual(backup.read_bytes(), contents)
 
@@ -90,9 +95,9 @@ class HistoryTests(unittest.TestCase):
 
     def test_atomic_save_and_temporary_directory_cleanup(self):
         app = self.make_app()
-        app.record_packet(123.0, self.record["data"])
+        app.record_packet(self.now, self.record["data"])
         self.assertEqual(json.loads(self.history_file.read_text()), [self.record])
-        self.assertEqual(list(self.home.iterdir()), [self.history_file])
+        self.assertEqual(set(self.home.iterdir()), {self.history_file, self.lock_file})
 
     def test_partial_write_does_not_damage_previous_history(self):
         self.history_file.write_text("[]", encoding="utf-8")
@@ -111,7 +116,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(dump.call_count, 5)
         self.assertEqual(self.history_file.read_text(), "[]")
         self.assertIn("disk full", errors.getvalue())
-        self.assertEqual(list(self.home.iterdir()), [self.history_file])
+        self.assertEqual(set(self.home.iterdir()), {self.history_file, self.lock_file})
 
     def test_replace_failure_preserves_previous_history(self):
         self.history_file.write_text("[]", encoding="utf-8")
@@ -128,7 +133,7 @@ class HistoryTests(unittest.TestCase):
         self.assertIn("replace denied", errors.getvalue())
         self.assertIn("after 5 attempts", errors.getvalue())
         self.assertEqual(errors.getvalue().count("[ERROR HISTORY]"), 1)
-        self.assertEqual(list(self.home.iterdir()), [self.history_file])
+        self.assertEqual(set(self.home.iterdir()), {self.history_file, self.lock_file})
 
     def test_save_succeeds_on_fifth_attempt(self):
         self.history_file.write_text("[]", encoding="utf-8")
@@ -154,10 +159,83 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(sleep.call_count, 4)
         self.assertEqual(errors.getvalue(), "")
         self.assertEqual(json.loads(self.history_file.read_text()), [self.record])
-        self.assertEqual(list(self.home.iterdir()), [self.history_file])
+        self.assertEqual(set(self.home.iterdir()), {self.history_file, self.lock_file})
+
+    def test_record_packet_merges_updates_from_other_app_instances(self):
+        first_app = self.make_app()
+        second_app = self.make_app()
+        first_record = [*self.record["data"]]
+        second_record = ["other", "00:11:22:33:44:66", "::2", "192.0.2.2"]
+
+        first_app.record_packet(self.now - 1, first_record)
+        second_app.record_packet(self.now, second_record)
+
+        saved = json.loads(self.history_file.read_text(encoding="utf-8"))
+        self.assertEqual([record["data"] for record in saved], [first_record, second_record])
+
+    def test_record_packet_prunes_expired_future_duplicates_and_oldest(self):
+        app = self.make_app()
+        data = ["incoming", "00:11:22:33:44:55", "::1", "127.0.0.1"]
+        records = [
+            {"timestamp": self.now - 1, "data": data},
+            {
+                "timestamp": self.now - multicast.HISTORY_MAX_AGE_SECONDS - 1,
+                "data": ["expired", "mac-expired", "::1", "127.0.0.1"],
+            },
+            {
+                "timestamp": self.now + 1,
+                "data": ["future", "mac-future", "::1", "127.0.0.1"],
+            },
+        ]
+        records.extend(
+            {
+                "timestamp": self.now - 30 + index,
+                "data": [f"recent-{index}", f"mac-{index}", "::1", "127.0.0.1"],
+            }
+            for index in range(20)
+        )
+        self.history_file.write_text(json.dumps(records), encoding="utf-8")
+
+        with patch.object(multicast.time, "time", return_value=self.now):
+            app.record_packet(self.now, data)
+
+        saved = json.loads(self.history_file.read_text(encoding="utf-8"))
+        self.assertEqual(len(saved), multicast.history_length)
+        self.assertEqual(sum(record["data"] == data for record in saved), 1)
+        self.assertEqual(saved[-1], {"timestamp": self.now, "data": data})
+        self.assertFalse(any(record["data"][0] in {"expired", "future"} for record in saved))
+        self.assertFalse(any(
+            record["data"][0] == "recent-0" for record in saved
+        ))
+
+    def test_record_waits_for_another_process_lock_before_touching_history(self):
+        app = self.make_app()
+        completed = threading.Event()
+
+        def record():
+            app.record_packet(self.now, self.record["data"])
+            completed.set()
+
+        with multicast.history_file_lock(self.lock_file):
+            worker = threading.Thread(target=record)
+            worker.start()
+            self.assertFalse(completed.wait(0.1))
+            self.assertFalse(self.history_file.exists())
+
+        worker.join(timeout=2)
+        self.assertTrue(completed.is_set())
+        self.assertEqual(json.loads(self.history_file.read_text()), [self.record])
 
 
 class InterfaceTests(unittest.TestCase):
+    def make_app(self):
+        temporary_root = Path(__file__).resolve().parents[2] / "tmp"
+        temporary_root.mkdir(exist_ok=True)
+        directory = tempfile.TemporaryDirectory(dir=temporary_root)
+        self.addCleanup(directory.cleanup)
+        with patch.object(multicast.Path, "home", return_value=Path(directory.name)):
+            return multicast.MulticastApp("test", False, False)
+
     def test_report_lists_all_interfaces_and_addresses(self):
         import psutil
 
@@ -229,40 +307,207 @@ class InterfaceTests(unittest.TestCase):
             with self.subTest(interface=name):
                 self.assertIn(multicast.get_interface_index(name), indexes)
 
-    def test_active_dual_stack_interface_is_selected(self):
+    def test_active_single_and_dual_stack_interfaces_are_discovered(self):
+        import psutil
+
+        link = SimpleNamespace(family=psutil.AF_LINK, address="00:11:22:33:44:55")
+        ipv4 = SimpleNamespace(family=socket.AF_INET, address="192.0.2.1")
+        ipv6 = SimpleNamespace(family=socket.AF_INET6, address="fe80::1%7")
+        with (
+            patch.object(psutil, "net_if_addrs", return_value={
+                "offline": [ipv4],
+                "v4-only": [link, ipv4],
+                "v6-only": [ipv6],
+                "dual": [link, ipv4, ipv6],
+                "no-ip": [link],
+            }),
+            patch.object(psutil, "net_if_stats", return_value={
+                "offline": SimpleNamespace(isup=False),
+                "v4-only": SimpleNamespace(isup=True),
+                "v6-only": SimpleNamespace(isup=True),
+                "dual": SimpleNamespace(isup=True),
+                "no-ip": SimpleNamespace(isup=True),
+            }),
+            patch.object(multicast, "get_interface_index",
+                         side_effect=[7, 8]) as lookup,
+        ):
+            self.assertEqual(
+                multicast.get_network_interfaces(),
+                [
+                    multicast.NetworkInterface(
+                        "v4-only", "00:11:22:33:44:55", "192.0.2.1", None, None
+                    ),
+                    multicast.NetworkInterface(
+                        "v6-only", "00:00:00:00:00:00", None, "fe80::1", 7
+                    ),
+                    multicast.NetworkInterface(
+                        "dual", "00:11:22:33:44:55", "192.0.2.1", "fe80::1", 8
+                    ),
+                ],
+            )
+            self.assertEqual(lookup.call_count, 2)
+
+    def test_no_active_multicast_interfaces_returns_empty_list(self):
+        import psutil
+
+        with (
+            patch.object(psutil, "net_if_addrs", return_value={}),
+            patch.object(psutil, "net_if_stats", return_value={}),
+        ):
+            self.assertEqual(multicast.get_network_interfaces(), [])
+
+    def test_failed_ipv6_index_lookup_keeps_ipv4_usable(self):
         import psutil
 
         addresses = [
-            SimpleNamespace(family=psutil.AF_LINK, address="00:11:22:33:44:55"),
             SimpleNamespace(family=socket.AF_INET, address="192.0.2.1"),
             SimpleNamespace(family=socket.AF_INET6, address="fe80::1%7"),
         ]
         with (
-            patch.object(psutil, "net_if_addrs", return_value={
-                "offline": addresses, "no-index": addresses,
-                "zero-index": addresses, "active": addresses,
-            }),
+            patch.object(psutil, "net_if_addrs", return_value={"dual": addresses}),
             patch.object(psutil, "net_if_stats", return_value={
-                "offline": SimpleNamespace(isup=False),
-                "no-index": SimpleNamespace(isup=True),
-                "zero-index": SimpleNamespace(isup=True),
-                "active": SimpleNamespace(isup=True),
+                "dual": SimpleNamespace(isup=True),
             }),
-            patch.object(multicast, "get_interface_index",
-                         side_effect=[OSError("missing"), 0, 7]) as lookup,
+            patch.object(multicast, "get_interface_index", side_effect=OSError("missing")),
         ):
             self.assertEqual(
-                multicast.get_network_info(),
-                ("00:11:22:33:44:55", "fe80::1", "192.0.2.1", 7),
+                multicast.get_network_interfaces(),
+                [multicast.NetworkInterface(
+                    "dual", "00:00:00:00:00:00", "192.0.2.1", "fe80::1", None
+                )],
             )
-            self.assertEqual(lookup.call_count, 3)
 
-    def test_missing_interface_is_explicit_error(self):
-        import psutil
+    def test_sender_alternates_and_restarts_with_ipv6_after_configuration_change(self):
+        app = self.make_app()
+        ipv4 = multicast.NetworkInterface(
+            "v4", "00:11:22:33:44:55", "192.0.2.1", None, None
+        )
+        ipv6 = multicast.NetworkInterface(
+            "v6", "00:11:22:33:44:66", None, "fe80::1", 7
+        )
+        both = [ipv4, ipv6]
 
-        with patch.object(psutil, "net_if_addrs", return_value={}):
-            with self.assertRaisesRegex(OSError, "No active IPv4/IPv6"):
-                multicast.get_network_info()
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=both),
+            patch.object(multicast, "send_multicast_packet") as send,
+        ):
+            app.send_current_packet()
+            app.send_current_packet()
+            self.assertEqual(
+                [call.args[1] for call in send.call_args_list],
+                [socket.AF_INET6, socket.AF_INET],
+            )
+
+            patcher = patch.object(multicast, "get_network_interfaces", return_value=[ipv4])
+            with patcher:
+                app.send_current_packet()
+            with patch.object(multicast, "get_network_interfaces", return_value=both):
+                app.send_current_packet()
+
+        self.assertEqual(
+            [call.args[1] for call in send.call_args_list],
+            [socket.AF_INET6, socket.AF_INET, socket.AF_INET, socket.AF_INET6],
+        )
+
+    def test_sender_alternates_on_a_single_dual_stack_interface(self):
+        app = self.make_app()
+        dual_stack = multicast.NetworkInterface(
+            "dual", "00:11:22:33:44:55", "192.0.2.1", "fe80::1", 7
+        )
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=[dual_stack]),
+            patch.object(multicast, "send_multicast_packet") as send,
+        ):
+            app.send_current_packet()
+            app.send_current_packet()
+
+        self.assertEqual(
+            [call.args[1] for call in send.call_args_list],
+            [socket.AF_INET6, socket.AF_INET],
+        )
+
+    def test_sender_uses_empty_field_for_unavailable_address_family(self):
+        app = self.make_app()
+        ipv4 = multicast.NetworkInterface(
+            "v4", "00:11:22:33:44:55", "192.0.2.1", None, None
+        )
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=[ipv4]),
+            patch.object(multicast, "send_multicast_packet") as send,
+        ):
+            app.send_current_packet()
+
+        packet = send.call_args.args[2]
+        self.assertEqual(
+            multicast.decode_strings(packet),
+            ["test", "00:11:22:33:44:55", "", "192.0.2.1"],
+        )
+
+    def test_sender_does_nothing_without_multicast_interfaces(self):
+        app = self.make_app()
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=[]),
+            patch.object(multicast, "send_multicast_packet") as send,
+        ):
+            app.send_current_packet()
+        send.assert_not_called()
+        self.assertEqual(app.last_sent_packet, "None yet")
+
+    def test_listener_joins_both_multicast_groups_on_all_matching_interfaces(self):
+        app = self.make_app()
+        interfaces = [
+            multicast.NetworkInterface(
+                "v4", "00:11:22:33:44:55", "192.0.2.1", None, None
+            ),
+            multicast.NetworkInterface(
+                "v6", "00:11:22:33:44:66", None, "fe80::1", 7
+            ),
+            multicast.NetworkInterface(
+                "dual", "00:11:22:33:44:77", "192.0.2.2", "fe80::2", 8
+            ),
+        ]
+        ipv4_socket = Mock()
+        ipv6_socket = Mock()
+        with patch.object(
+            multicast.socket, "socket", side_effect=[ipv4_socket, ipv6_socket]
+        ):
+            listeners = app.create_listener_sockets(interfaces)
+
+        self.assertEqual(set(listeners), {socket.AF_INET, socket.AF_INET6})
+        ipv4_memberships = [
+            call.args[2] for call in ipv4_socket.setsockopt.call_args_list
+            if call.args[:2] == (socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP)
+        ]
+        ipv6_memberships = [
+            call.args[2] for call in ipv6_socket.setsockopt.call_args_list
+            if call.args[:2] == (socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP)
+        ]
+        self.assertEqual(len(ipv4_memberships), 2)
+        self.assertEqual(len(ipv6_memberships), 2)
+
+    def test_packet_sender_uses_family_specific_multicast_destination(self):
+        ipv4 = multicast.NetworkInterface(
+            "v4", "00:11:22:33:44:55", "192.0.2.1", None, None
+        )
+        ipv6 = multicast.NetworkInterface(
+            "v6", "00:11:22:33:44:66", None, "fe80::1", 7
+        )
+        ipv4_socket = Mock()
+        ipv6_socket = Mock()
+        with patch.object(
+            multicast.socket, "socket", side_effect=[ipv4_socket, ipv6_socket]
+        ):
+            multicast.send_multicast_packet(ipv4, socket.AF_INET, b"packet")
+            multicast.send_multicast_packet(ipv6, socket.AF_INET6, b"packet")
+
+        ipv4_socket.sendto.assert_called_once_with(
+            b"packet", (multicast.MCAST_IPV4, multicast.PORT)
+        )
+        ipv6_socket.sendto.assert_called_once_with(
+            b"packet", (multicast.MCAST_IPV6, multicast.PORT, 0, 7)
+        )
+        ipv4_socket.close.assert_called_once()
+        ipv6_socket.close.assert_called_once()
 
 
 class MachineNameTests(unittest.TestCase):

@@ -1,9 +1,10 @@
-# Pi-Local IPv6 Multicast
+# Pi-Local IPv4/IPv6 Multicast
 
 `pi_multicast.py` periodically broadcasts this machine's name and network
-addresses over IPv6 multicast, and listens for broadcasts from other machines.
-Use the optional GUI to view discovered devices, the arrival time of their
-latest packets, their age, and a persisted history of recent arrivals.
+addresses over IPv4 and/or IPv6 multicast, and listens for broadcasts from
+other machines. Use the optional GUI to view discovered devices, the arrival
+time of their latest packets, their age, and a persisted history of recent
+arrivals.
 
 ## Requirements
 
@@ -11,7 +12,7 @@ latest packets, their age, and a persisted history of recent arrivals.
 - `psutil`
 - `tkinter` when using the GUI (often included with Python; some Linux
   distributions package it separately)
-- An active network interface with IPv4 and IPv6 multicast support
+- An active network interface with IPv4 and/or IPv6 multicast support
 
 Install the Python dependency:
 
@@ -65,21 +66,31 @@ Options:
 The program keeps up to 16 distinct received packet records in
 `pi_multicast_history.json` in the user's home directory. Records with the
 same machine name, MAC, IPv6, and IPv4 values are deduplicated, retaining only
-the most recent arrival. The GUI displays historical arrivals with `H`
+the most recent arrival. Records older than three days or dated in the future
+are discarded, and the oldest records are removed when the history exceeds
+the limit. A sibling `pi_multicast_history.json.lock` file coordinates access
+between program instances. The GUI displays historical arrivals with `H`
 prefixed to their age.
 
-History saves atomically replace the previous file so interrupted or concurrent
-writes cannot leave a partially written JSON document. If a save fails, the
-program tries up to five times, with a short delay between attempts, and reports
-the final error if all attempts fail. If history contains
+History reads, updates, and atomic replacements are protected by the lock file;
+temporary files and their cleanup are also handled while holding the lock.
+Each received packet is merged with the latest on-disk history, rather than a
+stale in-memory snapshot. Atomic replacements prevent interrupted writes from
+leaving a partially written JSON document. If a save fails, the program tries
+up to five times, with a short delay between attempts, and reports the final
+error if all attempts fail. If history contains
 invalid JSON or malformed records, the program preserves the original beside
 it as `pi_multicast_history.corrupt-<unique-id>.json`, warns on standard error
 (or in a GUI dialog), and starts with empty history. If the backup cannot be
 created, startup fails rather than risking loss of the original.
 
-Interface selection skips disconnected adapters and requires both IPv4 and
-IPv6 addresses. On Windows, friendly adapter names (such as `Ethernet 3`) are
-resolved using the native Windows interface API when socket name lookup fails.
+Interface selection skips disconnected adapters and uses each interface's
+available IPv4 and/or IPv6 address. IPv6 interfaces require a resolvable
+interface index for multicast scoping. On Windows, friendly adapter names
+(such as `Ethernet 3`) are resolved using the native Windows interface API
+when socket name lookup fails. The program refreshes interface configuration
+while running; when neither address family is available, it waits and checks
+again later.
 
 Examples:
 
@@ -89,10 +100,30 @@ python pi_multicast.py WorkshopPC -l
 python pi_multicast.py -g
 ```
 
-The program sends to IPv6 multicast address `ff05:3141:5926:5358:9793:2384:6264:3383`
-on UDP port `5005`, using a hop limit of 15. Broadcasts are sent at random
-intervals of 60 to 300 seconds. Network and firewall configuration must allow
-IPv6 multicast traffic on the participating interface.
+The program sends to IPv4 multicast address `239.255.31.41` and IPv6 multicast
+address `ff05:3141:5926:5358:9793:2384:6264:3383` on UDP port `5005`, using a
+TTL/hop limit of 15. Broadcasts are sent at random intervals of 60 to 300
+seconds. With only one address family available, it sends only on that family.
+When both are available, it alternates between IPv6 and IPv4 on successive
+send intervals, beginning with IPv6; a network configuration change restarts
+the alternation. Network and firewall configuration must allow multicast
+traffic for each participating family and interface.
+
+## Packet format
+
+IPv4 and IPv6 datagrams share the same packet format. Each contains four
+consecutive length-prefixed UTF-8 strings, in this order:
+
+1. Machine name
+2. MAC address
+3. IPv6 address
+4. IPv4 address
+
+Each string is encoded as a one-byte unsigned length followed by that many
+UTF-8 bytes: `[length][value]`. The length counts bytes, not characters, and
+each value can therefore be at most 255 bytes. If an interface does not have
+one of the address families, that address field is an empty string. The four
+entries are concatenated directly, with no separators or additional header.
 
 ## Tests
 
