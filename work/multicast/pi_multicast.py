@@ -300,7 +300,7 @@ class MulticastApp:
             socket.AF_INET6: "Waiting to broadcast...",
         }
         self.network_signature = None
-        self.next_family = socket.AF_INET6
+        self.next_family = random.choice((socket.AF_INET, socket.AF_INET6))
 
         self.root = None
         self.sent_label = None
@@ -471,7 +471,7 @@ class MulticastApp:
         signature = self.network_signature_for(interfaces)
         if signature != self.network_signature:
             self.network_signature = signature
-            self.next_family = socket.AF_INET6
+            self.next_family = random.choice((socket.AF_INET, socket.AF_INET6))
 
         ipv4_interfaces = [interface for interface in interfaces if interface.ipv4]
         ipv6_interfaces = [interface for interface in interfaces if interface.ipv6]

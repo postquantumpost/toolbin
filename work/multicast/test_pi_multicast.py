@@ -11,7 +11,7 @@ import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pi_multicast as multicast
 
@@ -267,6 +267,15 @@ class InterfaceTests(unittest.TestCase):
         with patch.object(multicast.Path, "home", return_value=Path(directory.name)):
             return multicast.MulticastApp("test", False, False)
 
+    def test_sender_starts_with_random_address_family(self):
+        with patch.object(
+            multicast.random, "choice", return_value=socket.AF_INET
+        ) as choice:
+            app = self.make_app()
+
+        self.assertEqual(app.next_family, socket.AF_INET)
+        choice.assert_called_once_with((socket.AF_INET, socket.AF_INET6))
+
     def test_report_lists_all_interfaces_and_addresses(self):
         import psutil
 
@@ -408,7 +417,7 @@ class InterfaceTests(unittest.TestCase):
                 )],
             )
 
-    def test_sender_alternates_and_restarts_with_ipv6_after_configuration_change(self):
+    def test_sender_alternates_and_randomizes_after_configuration_change(self):
         app = self.make_app()
         ipv4 = multicast.NetworkInterface(
             "v4", "00:11:22:33:44:55", "192.0.2.1", None, None
@@ -421,13 +430,14 @@ class InterfaceTests(unittest.TestCase):
         with (
             patch.object(multicast, "get_network_interfaces", return_value=both),
             patch.object(multicast, "send_multicast_packet") as send,
+            patch.object(
+                multicast.random,
+                "choice",
+                side_effect=[socket.AF_INET, socket.AF_INET6, socket.AF_INET6],
+            ) as choice,
         ):
             app.send_current_packet()
             app.send_current_packet()
-            self.assertEqual(
-                [call.args[1] for call in send.call_args_list],
-                [socket.AF_INET6, socket.AF_INET],
-            )
 
             patcher = patch.object(multicast, "get_network_interfaces", return_value=[ipv4])
             with patcher:
@@ -437,7 +447,11 @@ class InterfaceTests(unittest.TestCase):
 
         self.assertEqual(
             [call.args[1] for call in send.call_args_list],
-            [socket.AF_INET6, socket.AF_INET, socket.AF_INET, socket.AF_INET6],
+            [socket.AF_INET, socket.AF_INET6, socket.AF_INET, socket.AF_INET6],
+        )
+        self.assertEqual(
+            choice.call_args_list,
+            [call((socket.AF_INET, socket.AF_INET6))] * 3,
         )
 
     def test_sender_alternates_on_a_single_dual_stack_interface(self):
