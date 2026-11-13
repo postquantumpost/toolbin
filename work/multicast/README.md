@@ -59,7 +59,9 @@ Options:
 - `-l`: Print sent and received packet details to standard output when the GUI
   is disabled. Without logging or the GUI, the program runs quietly.
 - `-g`: Launch the dashboard showing the last sent packet and discovered
-  devices, including each latest packet's arrival time and age. On Windows,
+  devices, including each latest packet's arrival time and age. Family-specific
+  send failures and unavailable IPv6 interface indexes appear in the status
+  lines. On Windows,
   the GUI relaunches under `pythonw.exe` when needed to hide the console. The
   GUI is optional; the program sends and listens in both modes.
 

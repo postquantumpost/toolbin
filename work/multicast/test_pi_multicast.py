@@ -456,9 +456,11 @@ class InterfaceTests(unittest.TestCase):
 
     def test_sender_alternates_on_a_single_dual_stack_interface(self):
         app = self.make_app()
+        app.next_family = socket.AF_INET6
         dual_stack = multicast.NetworkInterface(
             "dual", "00:11:22:33:44:55", "192.0.2.1", "fe80::1", 7
         )
+        app.network_signature = app.network_signature_for([dual_stack])
         with (
             patch.object(multicast, "get_network_interfaces", return_value=[dual_stack]),
             patch.object(multicast, "send_multicast_packet") as send,
@@ -507,6 +509,47 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(
             multicast.decode_strings(packet),
             ["test", "00:11:22:33:44:55", "", "192.0.2.1"],
+        )
+
+    def test_sender_skips_ipv6_interface_without_index_and_updates_gui_status(self):
+        app = self.make_app()
+        app.gui_mode = True
+        app.next_family = socket.AF_INET6
+        dual_stack = multicast.NetworkInterface(
+            "dual", "00:11:22:33:44:55", "192.0.2.1", "fe80::1", None
+        )
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=[dual_stack]),
+            patch.object(multicast, "send_multicast_packet") as send,
+        ):
+            app.send_current_packet()
+
+        self.assertEqual(send.call_args.args[1], socket.AF_INET)
+        self.assertEqual(
+            app.last_sent_packets[socket.AF_INET6],
+            "Unavailable: IPv6 interface index could not be resolved",
+        )
+
+    def test_ipv6_send_failure_is_visible_in_gui_status(self):
+        app = self.make_app()
+        app.gui_mode = True
+        app.next_family = socket.AF_INET6
+        ipv6 = multicast.NetworkInterface(
+            "v6", "00:11:22:33:44:55", None, "fe80::1", 7
+        )
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=[ipv6]),
+            patch.object(
+                multicast,
+                "send_multicast_packet",
+                side_effect=OSError("network unavailable"),
+            ),
+        ):
+            app.send_current_packet()
+
+        self.assertEqual(
+            app.last_sent_packets[socket.AF_INET6],
+            "Send failed: network unavailable",
         )
 
     def test_sender_does_nothing_without_multicast_interfaces(self):

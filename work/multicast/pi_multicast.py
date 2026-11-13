@@ -474,7 +474,17 @@ class MulticastApp:
             self.next_family = random.choice((socket.AF_INET, socket.AF_INET6))
 
         ipv4_interfaces = [interface for interface in interfaces if interface.ipv4]
-        ipv6_interfaces = [interface for interface in interfaces if interface.ipv6]
+        ipv6_interfaces = [
+            interface
+            for interface in interfaces
+            if interface.ipv6 and interface.index is not None
+        ]
+        if not ipv6_interfaces and any(
+            interface.ipv6 and interface.index is None for interface in interfaces
+        ):
+            self.last_sent_packets[socket.AF_INET6] = (
+                "Unavailable: IPv6 interface index could not be resolved"
+            )
         if ipv4_interfaces and ipv6_interfaces:
             family = self.next_family
             self.next_family = (
@@ -489,10 +499,7 @@ class MulticastApp:
 
         candidates = ipv4_interfaces
         if family == socket.AF_INET6:
-            indexed_interfaces = [
-                candidate for candidate in ipv6_interfaces if candidate.index is not None
-            ]
-            candidates = indexed_interfaces or ipv6_interfaces
+            candidates = ipv6_interfaces
         interface = candidates[0]
         self.mac = interface.mac
         self.ipv6 = interface.ipv6 or ""
@@ -516,8 +523,10 @@ class MulticastApp:
             if not self.gui_mode and self.logging:
                 print(f"[SENT] {self.last_sent_packet}")
         except OSError as error:
+            family_name = "IPv6" if family == socket.AF_INET6 else "IPv4"
+            self.last_sent_packets[family] = f"Send failed: {error}"
             if self.logging:
-                print(f"[ERROR SENDING]: {error}")
+                print(f"[ERROR SENDING {family_name}]: {error}")
 
     def report_network_error(self, message):
         if self.logging and not self.gui_mode:
