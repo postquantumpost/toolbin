@@ -612,8 +612,13 @@ class InterfaceTests(unittest.TestCase):
         ipv4_socket.sendto.assert_called_once_with(
             b"packet", (multicast.MCAST_IPV4, multicast.PORT)
         )
+        # The destination must not carry a scope_id: Windows rejects an
+        # interface index as sin6_scope_id for site-local groups (WSAEADDRNOTAVAIL).
         ipv6_socket.sendto.assert_called_once_with(
-            b"packet", (multicast.MCAST_IPV6, multicast.PORT, 0, 7)
+            b"packet", (multicast.MCAST_IPV6, multicast.PORT)
+        )
+        ipv6_socket.setsockopt.assert_any_call(
+            socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, 7
         )
         ipv4_socket.close.assert_called_once()
         ipv6_socket.close.assert_called_once()

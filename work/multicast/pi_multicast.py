@@ -169,7 +169,11 @@ def send_multicast_packet(interface, family, payload):
         try:
             sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, interface.index)
             sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 15)
-            sock.sendto(payload, (MCAST_IPV6, PORT, 0, interface.index))
+            # IPV6_MULTICAST_IF selects the outgoing interface. Do not pass the
+            # interface index as sin6_scope_id: for a site-local group (ff05::/16)
+            # Windows expects a site zone ID there and rejects an interface index
+            # with WSAEADDRNOTAVAIL (10049).
+            sock.sendto(payload, (MCAST_IPV6, PORT))
         finally:
             sock.close()
         return
