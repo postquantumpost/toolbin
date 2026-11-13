@@ -226,6 +226,37 @@ class HistoryTests(unittest.TestCase):
         self.assertTrue(completed.is_set())
         self.assertEqual(json.loads(self.history_file.read_text()), [self.record])
 
+    def test_gui_sorts_active_and_historical_packets_by_age_separately(self):
+        app = self.make_app(gui=True)
+        active_old = ("active-old", "active-old-mac", "::1", "127.0.0.1")
+        active_new = ("active-new", "active-new-mac", "::1", "127.0.0.1")
+        history_old = ["history-old", "history-old-mac", "::1", "127.0.0.1"]
+        history_new = ["history-new", "history-new-mac", "::1", "127.0.0.1"]
+        app.received_packets = {
+            active_old[1]: (self.now - 20, active_old),
+            active_new[1]: (self.now - 10, active_new),
+        }
+        app.history = [
+            {"timestamp": self.now - 30, "data": history_old},
+            {"timestamp": self.now - 15, "data": history_new},
+        ]
+        app.sent_label = Mock()
+        app.tree = Mock()
+        app.tree.get_children.return_value = []
+        app.root = Mock()
+
+        with patch.object(multicast.time, "time", return_value=self.now):
+            app.update_gui_loop()
+
+        displayed_names = [
+            call.kwargs["values"][0]
+            for call in app.tree.insert.call_args_list
+        ]
+        self.assertEqual(
+            displayed_names,
+            ["active-new", "active-old", "history-new", "history-old"],
+        )
+
 
 class InterfaceTests(unittest.TestCase):
     def make_app(self):
@@ -424,6 +455,27 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(
             [call.args[1] for call in send.call_args_list],
             [socket.AF_INET6, socket.AF_INET],
+        )
+
+    def test_gui_shows_last_packet_for_each_family_in_ipv4_ipv6_order(self):
+        app = self.make_app()
+        app.gui_mode = True
+        dual_stack = multicast.NetworkInterface(
+            "dual", "00:11:22:33:44:55", "192.0.2.1", "fe80::1", 7
+        )
+        with (
+            patch.object(multicast, "get_network_interfaces", return_value=[dual_stack]),
+            patch.object(multicast, "send_multicast_packet"),
+        ):
+            app.send_current_packet()
+            app.send_current_packet()
+
+        self.assertEqual(
+            app.sent_packet_status(),
+            "IPv4 | Name: test | MAC: 00:11:22:33:44:55 | "
+            "IPv6: fe80::1 | IPv4: 192.0.2.1\n"
+            "IPv6 | Name: test | MAC: 00:11:22:33:44:55 | "
+            "IPv6: fe80::1 | IPv4: 192.0.2.1",
         )
 
     def test_sender_uses_empty_field_for_unavailable_address_family(self):

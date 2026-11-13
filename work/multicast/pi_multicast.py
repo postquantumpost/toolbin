@@ -295,6 +295,10 @@ class MulticastApp:
         self.history_error = None
         self.history_error_reported = False
         self.last_sent_packet = "None yet"
+        self.last_sent_packets = {
+            socket.AF_INET: "Waiting to broadcast...",
+            socket.AF_INET6: "Waiting to broadcast...",
+        }
         self.network_signature = None
         self.next_family = socket.AF_INET6
 
@@ -503,10 +507,12 @@ class MulticastApp:
         try:
             send_multicast_packet(interface, family, payload)
             family_name = "IPv6" if family == socket.AF_INET6 else "IPv4"
-            self.last_sent_packet = (
-                f"{family_name} | Name: {self.machine_name} | MAC: {self.mac} | "
+            packet_details = (
+                f"Name: {self.machine_name} | MAC: {self.mac} | "
                 f"IPv6: {self.ipv6} | IPv4: {self.ipv4}"
             )
+            self.last_sent_packet = f"{family_name} | {packet_details}"
+            self.last_sent_packets[family] = packet_details
             if not self.gui_mode and self.logging:
                 print(f"[SENT] {self.last_sent_packet}")
         except OSError as error:
@@ -650,7 +656,10 @@ class MulticastApp:
         sent_frame = tk.LabelFrame(self.root, text="Last Sent Packet Status (Refreshes Every 1-5 Mins)", padx=10, pady=10)
         sent_frame.pack(fill="x", padx=10, pady=5)
 
-        self.sent_label = tk.Label(sent_frame, text="Waiting to broadcast...", fg="green", font=("Arial", 10, "bold"))
+        self.sent_label = tk.Label(
+            sent_frame, text=self.sent_packet_status(), fg="green",
+            font=("Arial", 10, "bold"),
+        )
         self.sent_label.pack(anchor="w")
 
         # Bottom Section: Received Packets Table
@@ -683,7 +692,7 @@ class MulticastApp:
 
     def update_gui_loop(self):
         # Update Sent text
-        self.sent_label.config(text=self.last_sent_packet)
+        self.sent_label.config(text=self.sent_packet_status())
 
         # Clear Table and Redraw with calculated packet age
         for row in self.tree.get_children():
@@ -694,6 +703,9 @@ class MulticastApp:
             received_packets = list(self.received_packets.items())
             history = list(self.history)
 
+        received_packets.sort(key=lambda item: item[1][0], reverse=True)
+        history.sort(key=lambda record: record["timestamp"], reverse=True)
+
         current_data = {tuple(data) for _, (_, data) in received_packets}
         for mac, (timestamp, data) in received_packets:
             age = int(current_time - timestamp)
@@ -701,7 +713,7 @@ class MulticastApp:
             arrival = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
             self.tree.insert("", "end", values=(name, mac_addr, ip6, ip4, f"{age}s", arrival))
 
-        for record in reversed(history):
+        for record in history:
             timestamp = record["timestamp"]
             name, mac_addr, ip6, ip4 = record["data"]
             if tuple(record["data"]) in current_data:
@@ -712,6 +724,12 @@ class MulticastApp:
 
         # Refresh every 1 second
         self.root.after(1000, self.update_gui_loop)
+
+    def sent_packet_status(self):
+        return "\n".join((
+            f"IPv4 | {self.last_sent_packets[socket.AF_INET]}",
+            f"IPv6 | {self.last_sent_packets[socket.AF_INET6]}",
+        ))
 
 
 def get_default_machine_name():
