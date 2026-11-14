@@ -4,5 +4,5 @@
 
 set -x
 git remote -v
-git pull
+git pull --rebase
 git push origin HEAD
