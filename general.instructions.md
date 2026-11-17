@@ -55,3 +55,14 @@ Have variable names indicate units when possible. For example if a value contain
 seconds, have the name indicate seconds. If it is milliseconds, have it indicate that.
 Don't just indicate it as a time span. The same for other units like length: meters, feet,
 inches, etc.
+
+If a software package is missing notify the user and request guidance.
+
+If the user misspells something it is ok to print a notice with the correct
+spelling. Keep in mind that the user speaks more than four languages and that
+a word may be spelled correctly in one of them while appearing not spelled
+correctly in english.
+
+Generally use UTF-8 as the default string format.
+
+Generally use ISO time and date format like 2026-12-12 23:59:59.
