@@ -54,7 +54,7 @@ create a new temporary repository after confirmation.
 Have variable names indicate units when possible. For example if a value contains
 seconds, have the name indicate seconds. If it is milliseconds, have it indicate that.
 Don't just indicate it as a time span. The same for other units like length: meters, feet,
-inches, etc.
+inches, etc. Also, when possible, add a comment indicating the units.
 
 If a software package is missing notify the user and request guidance.
 
@@ -63,6 +63,21 @@ spelling. Keep in mind that the user speaks more than four languages and that
 a word may be spelled correctly in one of them while appearing not spelled
 correctly in english.
 
-Generally use UTF-8 as the default string format.
+Generally use UTF-8 as the default string format unless otherwise directed.
 
 Generally use ISO time and date format like 2026-12-12 23:59:59.
+
+Don't combine multiple shell commands to make it easier to approve a short command
+for an entire session. Or make each part of a long command separately approvable.
+
+In general, don't use polling, busy waiting, spin locks. If these look
+necessary request guidance.
+
+Investigate compiler warnings to see if they are real bugs. If so then fix
+the issue. If they are false positives, make it so they aren't reported.
+Don't leave compiler warnings in the code.
+
+Don't be averse to saying that you don't know something. Request guidance.
+
+When creating or editing python command scripts, set a Linux style first
+line "#!/usr/bin/env python3". For bash scripts use "#!/usr/bin/env bash".
